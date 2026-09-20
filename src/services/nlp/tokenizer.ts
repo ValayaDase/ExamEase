@@ -20,7 +20,10 @@ export const ENGLISH_STOPWORDS = new Set([
   'we\'re', 'we\'ve', 'were', 'weren\'t', 'what', 'what\'s', 'when', 'when\'s', 'where', 'where\'s', 'which', 'while',
   'who', 'who\'s', 'whom', 'why', 'why\'s', 'with', 'won\'t', 'would', 'wouldn\'t', 'you', 'you\'d', 'you\'ll',
   'you\'re', 'you\'ve', 'your', 'yours', 'yourself', 'yourselves', 'also', 'thus', 'hence', 'using', 'used', 'shows',
-  'etc', 'e.g.', 'i.e.'
+  'etc', 'e.g.', 'i.e.',
+  // PDF binary stream noise keywords
+  'obj', 'type', 'page', 'parent', 'resources', 'font', 'identity', 'adobe', 'cidfont', 'endobj', 'stream', 'endstream',
+  'flatedecode', 'length', 'filter', 'xref', 'trailer', 'startxref'
 ]);
 
 export function tokenize(text: string): Token[] {

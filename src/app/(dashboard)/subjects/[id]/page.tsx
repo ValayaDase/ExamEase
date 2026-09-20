@@ -6,11 +6,22 @@ import Navbar from '@/components/layout/Navbar';
 import Footer from '@/components/layout/Footer';
 import { Subject, MCQSet } from '@/types';
 import { Badge } from '@/components/ui/Badge';
-import { ArrowLeft, Sparkles, Plus, Calendar, Play, FileText, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Sparkles, Plus, Calendar, Play, FileText, CheckCircle2, Link2, Check } from 'lucide-react';
 
 export default function SubjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const subjectId = resolvedParams.id;
+
+  const [copiedSetId, setCopiedSetId] = useState<string | null>(null);
+
+  const handleCopyLink = (setId: string) => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : (process.env.NEXT_PUBLIC_APP_URL || '');
+    const shareUrl = `${origin}/quiz/${setId}`;
+
+    navigator.clipboard.writeText(shareUrl);
+    setCopiedSetId(setId);
+    setTimeout(() => setCopiedSetId(null), 2500);
+  };
 
   const [subject, setSubject] = useState<Subject | null>(null);
   const [mcqSets, setMcqSets] = useState<MCQSet[]>([]);
@@ -161,13 +172,33 @@ export default function SubjectDetailPage({ params }: { params: Promise<{ id: st
                   </div>
                 </div>
 
-                <Link
-                  href={`/quiz/${set.id}`}
-                  className="px-5 py-2.5 rounded-md font-medium text-xs text-white bg-[#1a73e8] hover:bg-[#1557b0] transition shadow-2xs flex items-center justify-center space-x-1.5 shrink-0"
-                >
-                  <Play className="w-3.5 h-3.5 fill-current" />
-                  <span>Start Practice</span>
-                </Link>
+                <div className="flex items-center space-x-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => handleCopyLink(set.id || set._id || '')}
+                    className="px-3.5 py-2.5 rounded-md font-medium text-xs text-[#1a73e8] bg-[#e8f0fe] hover:bg-[#d2e3fc] transition border border-[#d2e3fc] flex items-center space-x-1.5"
+                  >
+                    {copiedSetId === (set.id || set._id) ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-[#1e8e3e]" />
+                        <span className="text-[#1e8e3e] font-bold">Copied Link!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Link2 className="w-3.5 h-3.5" />
+                        <span>Copy Student Link</span>
+                      </>
+                    )}
+                  </button>
+
+                  <Link
+                    href={`/quiz/${set.id}`}
+                    className="px-4 py-2.5 rounded-md font-medium text-xs text-white bg-[#1a73e8] hover:bg-[#1557b0] transition shadow-2xs flex items-center space-x-1.5"
+                  >
+                    <Play className="w-3.5 h-3.5 fill-current" />
+                    <span>Start Practice</span>
+                  </Link>
+                </div>
               </div>
             ))}
           </div>

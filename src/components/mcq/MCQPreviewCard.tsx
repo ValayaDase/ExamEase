@@ -10,8 +10,7 @@ interface MCQPreviewCardProps {
   index: number;
   onUpdate: (updatedQuestion: Question) => void;
   onDelete: (questionId: string) => void;
-  onRegenerate: (question: Question) => Promise<void>;
-  isRegenerating: boolean;
+  showAnswers?: boolean;
 }
 
 export function MCQPreviewCard({
@@ -19,8 +18,7 @@ export function MCQPreviewCard({
   index,
   onUpdate,
   onDelete,
-  onRegenerate,
-  isRegenerating,
+  showAnswers = true,
 }: MCQPreviewCardProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editedText, setEditedText] = useState(question.question);
@@ -83,15 +81,6 @@ export function MCQPreviewCard({
               </button>
 
               <button
-                onClick={() => onRegenerate(question)}
-                disabled={isRegenerating}
-                className="px-2.5 py-1 rounded text-xs font-medium text-[#1a73e8] bg-[#e8f0fe] hover:bg-[#d2e3fc] border border-[#d2e3fc] transition flex items-center gap-1 disabled:opacity-50"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${isRegenerating ? 'animate-spin' : ''}`} />
-                <span>Regenerate</span>
-              </button>
-
-              <button
                 onClick={() => onDelete(question.id)}
                 className="px-2.5 py-1 rounded text-xs font-medium text-[#d93025] bg-[#fce8e6] hover:bg-[#fad2cf] border border-[#f5c6cb] transition flex items-center gap-1"
               >
@@ -128,7 +117,7 @@ export function MCQPreviewCard({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 mb-4">
             {question.options.map((opt, oIdx) => {
               const letter = String.fromCharCode(65 + oIdx);
-              const isCorrect = opt.trim() === question.correctAnswer.trim();
+              const isCorrect = showAnswers && opt.trim() === question.correctAnswer.trim();
 
               return (
                 <div
@@ -153,10 +142,12 @@ export function MCQPreviewCard({
             })}
           </div>
 
-          <div className="bg-[#f8f9fa] border border-[#dadce0] p-3 rounded-md text-xs text-[#5f6368]">
-            <strong className="text-[#1a73e8] block mb-0.5">Explanation:</strong>
-            {question.explanation}
-          </div>
+          {showAnswers && question.explanation && (
+            <div className="bg-[#f8f9fa] border border-[#dadce0] p-3 rounded-md text-xs text-[#5f6368]">
+              <strong className="text-[#1a73e8] block mb-0.5">Explanation:</strong>
+              {question.explanation}
+            </div>
+          )}
         </div>
       ) : (
         /* Edit Form */

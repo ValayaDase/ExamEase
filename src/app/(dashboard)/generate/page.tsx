@@ -7,7 +7,7 @@ import Footer from '@/components/layout/Footer';
 import { Subject, NLPAnalysisResult, Question } from '@/types';
 import { NLPConceptInspector } from '@/components/mcq/NLPConceptInspector';
 import { MCQPreviewCard } from '@/components/mcq/MCQPreviewCard';
-import { Upload, Sparkles, FileText, CheckCircle2, AlertCircle, Save, ArrowLeft, RefreshCw } from 'lucide-react';
+import { Upload, Sparkles, FileText, CheckCircle2, AlertCircle, Save, ArrowLeft, RefreshCw, Link2, Check, Copy } from 'lucide-react';
 
 function GenerateMCQContent() {
   const router = useRouter();
@@ -24,10 +24,9 @@ function GenerateMCQContent() {
   const [questionCount, setQuestionCount] = useState<number>(10);
   const [difficulty, setDifficulty] = useState<'easy' | 'medium' | 'hard' | 'mixed'>('medium');
 
-  // Step Control: 1: Form & Upload, 2: NLP Analysis, 3: Review Preview
-  const [step, setStep] = useState<1 | 2 | 3>(1);
-  const [isExtractingNLP, setIsExtractingNLP] = useState(false);
-  const [isGeneratingMCQs, setIsGeneratingMCQs] = useState(false);
+  // Step Control: 1: Form & Upload, 2: Review Preview & View Toggle
+  const [step, setStep] = useState<1 | 2>(1);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -56,8 +55,8 @@ function GenerateMCQContent() {
     loadSubjects();
   }, []);
 
-  // Step 1: Upload PDF & run Classical NLP Pipeline
-  const handleExtractNLP = async (e: React.FormEvent) => {
+  // Combined Direct Step: Upload PDF + Run NLP + Generate MCQs in one smooth flow
+  const handleDirectGenerateMCQs = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
@@ -74,64 +73,52 @@ function GenerateMCQContent() {
       return;
     }
 
-    setIsExtractingNLP(true);
+    setIsGenerating(true);
 
     try {
+      // Step A: Upload PDF and extract text + NLP concepts
       const formData = new FormData();
       formData.append('file', file);
 
-      const res = await fetch('/api/upload', {
+      const uploadRes = await fetch('/api/upload', {
         method: 'POST',
         body: formData,
       });
 
-      const data = await res.json();
+      const uploadData = await uploadRes.json();
 
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to process uploaded PDF.');
+      if (!uploadRes.ok) {
+        throw new Error(uploadData.error || 'Failed to process uploaded PDF.');
       }
 
-      setNlpResult(data.nlpResult);
-      setStep(2); // Advance to NLP Concept Inspector
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error extracting text from PDF.';
-      setError(msg);
-    } finally {
-      setIsExtractingNLP(false);
-    }
-  };
+      const extractedNlp = uploadData.nlpResult;
+      setNlpResult(extractedNlp);
 
-  // Step 2: Trigger AI MCQ Generation from NLP Context
-  const handleGenerateMCQs = async () => {
-    if (!nlpResult) return;
-    setError('');
-    setIsGeneratingMCQs(true);
-
-    try {
-      const res = await fetch('/api/generate', {
+      // Step B: Directly Generate MCQs from NLP Context
+      const genRes = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          nlpResult,
+          nlpResult: extractedNlp,
           questionCount,
           difficulty,
           mcqTitle,
         }),
       });
 
-      const data = await res.json();
+      const genData = await genRes.json();
 
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to generate questions.');
+      if (!genRes.ok) {
+        throw new Error(genData.error || 'Failed to generate questions.');
       }
 
-      setGeneratedQuestions(data.questions || []);
-      setStep(3); // Advance to Teacher Review Preview
+      setGeneratedQuestions(genData.questions || []);
+      setStep(2); // Direct transition to generated MCQs review view!
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error generating MCQs.';
       setError(msg);
     } finally {
-      setIsGeneratingMCQs(false);
+      setIsGenerating(false);
     }
   };
 
@@ -174,6 +161,9 @@ function GenerateMCQContent() {
     setGeneratedQuestions((prev) => prev.filter((item) => item.id !== questionId));
   };
 
+  const [savedShareUrl, setSavedShareUrl] = useState<string | null>(null);
+  const [copiedLink, setCopiedLink] = useState(false);
+
   // Step 3: Save Approved MCQ Set to Database
   const handleSaveMCQSet = async () => {
     if (generatedQuestions.length === 0) {
@@ -204,8 +194,9 @@ function GenerateMCQContent() {
         throw new Error(data.error || 'Failed to save MCQ set.');
       }
 
-      // Redirect back to subject details page showing saved cards
-      router.push(`/subjects/${selectedSubjectId}`);
+      const origin = typeof window !== 'undefined' ? window.location.origin : (process.env.NEXT_PUBLIC_APP_URL || '');
+      const shareUrl = `${origin}/quiz/${data.mcqSetId}`;
+      setSavedShareUrl(shareUrl);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error saving MCQ set.';
       setError(msg);
@@ -213,28 +204,13 @@ function GenerateMCQContent() {
     }
   };
 
+  // View Mode: true = With Correct Answers, false = Without Correct Answers (Student Paper view)
+  const [showAnswers, setShowAnswers] = useState(true);
+
   return (
     <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      {/* Progress Stepper */}
-      <div className="flex items-center justify-between max-w-2xl mx-auto mb-8 bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
-        <div className={`flex items-center space-x-2 ${step >= 1 ? 'text-indigo-600 font-bold' : 'text-slate-400'}`}>
-          <span className={`w-7 h-7 rounded-full text-xs flex items-center justify-center font-bold ${step >= 1 ? 'bg-indigo-600 text-white' : 'bg-slate-200'}`}>1</span>
-          <span className="text-xs hidden sm:inline">Upload Notes & Config</span>
-        </div>
-        <div className="h-0.5 w-12 bg-slate-200"></div>
-        <div className={`flex items-center space-x-2 ${step >= 2 ? 'text-indigo-600 font-bold' : 'text-slate-400'}`}>
-          <span className={`w-7 h-7 rounded-full text-xs flex items-center justify-center font-bold ${step >= 2 ? 'bg-indigo-600 text-white' : 'bg-slate-200'}`}>2</span>
-          <span className="text-xs hidden sm:inline">NLP Insights</span>
-        </div>
-        <div className="h-0.5 w-12 bg-slate-200"></div>
-        <div className={`flex items-center space-x-2 ${step >= 3 ? 'text-indigo-600 font-bold' : 'text-slate-400'}`}>
-          <span className={`w-7 h-7 rounded-full text-xs flex items-center justify-center font-bold ${step >= 3 ? 'bg-indigo-600 text-white' : 'bg-slate-200'}`}>3</span>
-          <span className="text-xs hidden sm:inline">Teacher Review & Save</span>
-        </div>
-      </div>
-
       {error && (
-        <div className="p-4 mb-6 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-sm flex items-center space-x-3">
+        <div className="p-4 mb-6 rounded-xl bg-[#fce8e6] border border-[#f5c6cb] text-[#d93025] text-xs flex items-center space-x-2">
           <AlertCircle className="w-5 h-5 shrink-0" />
           <span>{error}</span>
         </div>
@@ -242,34 +218,34 @@ function GenerateMCQContent() {
 
       {/* STEP 1: Upload PDF Notes & Configure Generation */}
       {step === 1 && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sm:p-8 max-w-3xl mx-auto">
+        <div className="bg-white rounded-xl border border-[#dadce0] shadow-2xs p-6 sm:p-8 max-w-3xl mx-auto">
           <div className="mb-6">
-            <h2 className="text-2xl font-extrabold text-slate-900">Generate Practice MCQs</h2>
-            <p className="text-slate-500 text-xs mt-1">
+            <h2 className="text-2xl font-medium text-[#202124]">Generate Practice MCQs</h2>
+            <p className="text-[#5f6368] text-xs mt-1">
               Upload your lecture notes (PDF). Our classical NLP engine extracts key concepts and generates grounded MCQs.
             </p>
           </div>
 
-          <form onSubmit={handleExtractNLP} className="space-y-6">
+          <form onSubmit={handleDirectGenerateMCQs} className="space-y-6">
             {/* Subject Selector */}
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Select Subject *</label>
+              <label className="block text-xs font-medium text-[#202124] mb-1">Select Subject / Class *</label>
               {loadingSubjects ? (
-                <div className="h-10 bg-slate-200 rounded-xl animate-pulse"></div>
+                <div className="h-10 bg-[#f1f3f4] rounded-md animate-pulse"></div>
               ) : subjects.length === 0 ? (
-                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
-                  No subjects found. Please create a subject first under "My Subjects".
+                <div className="p-3 bg-[#fef7e0] border border-[#fce8e6] rounded-md text-xs text-[#b06000]">
+                  No classes found. Please create a subject first under "Classwork & Subjects".
                 </div>
               ) : (
                 <select
                   value={selectedSubjectId}
                   onChange={(e) => setSelectedSubjectId(e.target.value)}
                   required
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white"
+                  className="w-full px-3.5 py-2.5 rounded-md border border-[#dadce0] text-xs focus:ring-1 focus:ring-[#1a73e8] focus:outline-none bg-white"
                 >
                   {subjects.map((s) => (
                     <option key={s.id} value={s.id}>
-                      {s.name} ({s.department || 'Subject'})
+                      {s.name} ({s.department || 'Class'})
                     </option>
                   ))}
                 </select>
@@ -278,22 +254,22 @@ function GenerateMCQContent() {
 
             {/* MCQ Title */}
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">MCQ Set Title *</label>
+              <label className="block text-xs font-medium text-[#202124] mb-1">MCQ Set Title *</label>
               <input
                 type="text"
                 required
                 value={mcqTitle}
                 onChange={(e) => setMcqTitle(e.target.value)}
                 placeholder='e.g. "NLP Module 3 - POS Tagging Practice"'
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                className="w-full px-3.5 py-2.5 rounded-md border border-[#dadce0] text-xs focus:ring-1 focus:ring-[#1a73e8] focus:outline-none"
               />
-              <p className="text-[11px] text-slate-500 mt-1">This title will be stored and displayed on the saved MCQ card.</p>
+              <p className="text-[11px] text-[#5f6368] mt-1">This title will be stored and displayed on the saved MCQ card.</p>
             </div>
 
             {/* Upload PDF Box */}
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Upload Notes PDF *</label>
-              <div className="border-2 border-dashed border-slate-300 hover:border-indigo-500 rounded-2xl p-6 text-center transition bg-slate-50/50">
+              <label className="block text-xs font-medium text-[#202124] mb-1">Upload Notes PDF *</label>
+              <div className="border-2 border-dashed border-[#dadce0] hover:border-[#1a73e8] rounded-xl p-6 text-center transition bg-[#f8f9fa]">
                 <input
                   type="file"
                   accept=".pdf"
@@ -302,11 +278,11 @@ function GenerateMCQContent() {
                   id="pdf-upload"
                 />
                 <label htmlFor="pdf-upload" className="cursor-pointer flex flex-col items-center">
-                  <FileText className="w-10 h-10 text-indigo-600 mb-2" />
-                  <span className="text-sm font-bold text-slate-800">
+                  <FileText className="w-10 h-10 text-[#1a73e8] mb-2" />
+                  <span className="text-sm font-medium text-[#202124]">
                     {file ? file.name : 'Click to select or drag PDF notes file'}
                   </span>
-                  <span className="text-xs text-slate-500 mt-1">
+                  <span className="text-xs text-[#5f6368] mt-1">
                     {file ? `${(file.size / 1024 / 1024).toFixed(2)} MB` : 'PDF files with readable study text'}
                   </span>
                 </label>
@@ -316,11 +292,11 @@ function GenerateMCQContent() {
             {/* Dynamic Controls Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Number of Questions</label>
+                <label className="block text-xs font-medium text-[#202124] mb-1">Number of Questions</label>
                 <select
                   value={questionCount}
                   onChange={(e) => setQuestionCount(Number(e.target.value))}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white"
+                  className="w-full px-3.5 py-2.5 rounded-md border border-[#dadce0] text-xs focus:ring-1 focus:ring-[#1a73e8] focus:outline-none bg-white"
                 >
                   <option value={5}>5 Questions</option>
                   <option value={10}>10 Questions</option>
@@ -331,11 +307,11 @@ function GenerateMCQContent() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Difficulty</label>
+                <label className="block text-xs font-medium text-[#202124] mb-1">Difficulty</label>
                 <select
                   value={difficulty}
                   onChange={(e) => setDifficulty(e.target.value as any)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white"
+                  className="w-full px-3.5 py-2.5 rounded-md border border-[#dadce0] text-xs focus:ring-1 focus:ring-[#1a73e8] focus:outline-none bg-white"
                 >
                   <option value="easy">Easy</option>
                   <option value="medium">Medium</option>
@@ -347,18 +323,18 @@ function GenerateMCQContent() {
 
             <button
               type="submit"
-              disabled={isExtractingNLP}
-              className="w-full py-3.5 rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-md transition flex items-center justify-center space-x-2 disabled:opacity-50"
+              disabled={isGenerating}
+              className="w-full py-3.5 rounded-md font-medium text-white bg-[#1a73e8] hover:bg-[#1557b0] shadow-2xs transition flex items-center justify-center space-x-2 disabled:opacity-50 text-sm"
             >
-              {isExtractingNLP ? (
+              {isGenerating ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  <span>Extracting PDF & Running NLP Pipeline...</span>
+                  <span>Processing PDF & Generating MCQs...</span>
                 </>
               ) : (
                 <>
-                  <Sparkles className="w-5 h-5" />
-                  <span>Run NLP Pipeline & Extract Concepts</span>
+                  <Sparkles className="w-5 h-5 text-white" />
+                  <span>Generate Practice MCQs</span>
                 </>
               )}
             </button>
@@ -366,62 +342,77 @@ function GenerateMCQContent() {
         </div>
       )}
 
-      {/* STEP 2: NLP Analysis Concept Inspector */}
-      {step === 2 && nlpResult && (
-        <div>
-          <button
-            onClick={() => setStep(1)}
-            className="inline-flex items-center space-x-1.5 text-xs font-bold text-slate-500 hover:text-indigo-600 transition mb-4"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            <span>Back to Upload Form</span>
-          </button>
-
-          <NLPConceptInspector
-            nlpResult={nlpResult}
-            onProceed={handleGenerateMCQs}
-            isGenerating={isGeneratingMCQs}
-          />
-        </div>
-      )}
-
-      {/* STEP 3: Teacher Review & Edit Preview Page */}
-      {step === 3 && (
+      {/* STEP 2: Direct Generated MCQs Review & View Mode Toggle Page */}
+      {step === 2 && (
         <div className="max-w-4xl mx-auto">
-          {/* Header Action bar */}
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div>
-              <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full uppercase tracking-wider">
-                Teacher Review Mode
-              </span>
-              <h2 className="text-2xl font-extrabold text-slate-900 mt-2">{mcqTitle}</h2>
-              <p className="text-slate-500 text-xs mt-1">
-                Review generated questions below. You can edit text/options, regenerate individual items, or delete questions.
-              </p>
+          {/* Header Action Bar */}
+          <div className="bg-white p-6 rounded-xl border border-[#dadce0] shadow-2xs mb-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4 pb-4 border-b border-[#f1f3f4]">
+              <div>
+                <button
+                  onClick={() => setStep(1)}
+                  className="inline-flex items-center space-x-1 text-xs font-medium text-[#5f6368] hover:text-[#1a73e8] transition mb-1"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  <span>Back to Upload</span>
+                </button>
+                <h2 className="text-2xl font-bold text-[#202124] mt-1">{mcqTitle}</h2>
+                <p className="text-[#5f6368] text-xs mt-0.5">
+                  {generatedQuestions.length} Questions generated from PDF notes.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3 shrink-0">
+                <button
+                  onClick={handleSaveMCQSet}
+                  disabled={isSaving || generatedQuestions.length === 0}
+                  className="flex items-center space-x-2 px-5 py-2.5 rounded-md font-medium text-xs text-white bg-[#1e8e3e] hover:bg-[#137333] shadow-2xs transition disabled:opacity-50"
+                >
+                  {isSaving ? (
+                    <span>Saving MCQ Set...</span>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4" />
+                      <span>Save MCQ Set ({generatedQuestions.length} Questions)</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
 
-            <div className="flex items-center gap-3 shrink-0">
-              <button
-                onClick={() => setStep(2)}
-                className="px-4 py-2.5 rounded-xl font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 text-xs transition"
-              >
-                Inspect NLP
-              </button>
+            {/* TOP VIEW MODE TOGGLE (2 Options: With Answers / Without Answers) */}
+            <div className="flex items-center justify-between bg-[#f8f9fa] p-1.5 rounded-lg border border-[#dadce0]">
+              <span className="text-xs font-medium text-[#5f6368] px-2 hidden sm:inline">
+                View Mode Options:
+              </span>
 
-              <button
-                onClick={handleSaveMCQSet}
-                disabled={isSaving || generatedQuestions.length === 0}
-                className="flex items-center space-x-2 px-6 py-2.5 rounded-xl font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm transition text-xs disabled:opacity-50"
-              >
-                {isSaving ? (
-                  <span>Saving MCQ Set...</span>
-                ) : (
-                  <>
-                    <Save className="w-4 h-4" />
-                    <span>Save MCQ Set ({generatedQuestions.length} Questions)</span>
-                  </>
-                )}
-              </button>
+              <div className="flex items-center space-x-1 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={() => setShowAnswers(true)}
+                  className={`flex-1 sm:flex-initial px-4 py-2 rounded-md text-xs font-medium transition flex items-center justify-center space-x-1.5 ${
+                    showAnswers
+                      ? 'bg-white text-[#1e8e3e] shadow-xs border border-[#dadce0] font-bold'
+                      : 'text-[#5f6368] hover:bg-[#e8eaed]'
+                  }`}
+                >
+                  <CheckCircle2 className="w-4 h-4 text-[#1e8e3e]" />
+                  <span>1. With Correct Answers & Explanations</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowAnswers(false)}
+                  className={`flex-1 sm:flex-initial px-4 py-2 rounded-md text-xs font-medium transition flex items-center justify-center space-x-1.5 ${
+                    !showAnswers
+                      ? 'bg-white text-[#1a73e8] shadow-xs border border-[#dadce0] font-bold'
+                      : 'text-[#5f6368] hover:bg-[#e8eaed]'
+                  }`}
+                >
+                  <FileText className="w-4 h-4 text-[#1a73e8]" />
+                  <span>2. Without Correct Answers (Question Paper View)</span>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -433,10 +424,71 @@ function GenerateMCQContent() {
               index={idx}
               onUpdate={handleUpdateQuestion}
               onDelete={handleDeleteQuestion}
-              onRegenerate={handleRegenerateQuestion}
-              isRegenerating={regeneratingId === q.id}
+              showAnswers={showAnswers}
             />
           ))}
+        </div>
+      )}
+
+      {/* MCQ Set Saved Success & Share Link Modal */}
+      {savedShareUrl && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-lg rounded-xl p-6 shadow-xl border border-[#dadce0]">
+            <div className="text-center mb-6">
+              <div className="w-12 h-12 rounded-full bg-[#e6f4ea] text-[#1e8e3e] flex items-center justify-center mx-auto mb-3">
+                <CheckCircle2 className="w-7 h-7" />
+              </div>
+              <h3 className="text-xl font-bold text-[#202124]">MCQ Set Saved Successfully! 🎉</h3>
+              <p className="text-xs text-[#5f6368] mt-1">
+                Your question set is stored in your class. You can share this link directly with students to solve the quiz!
+              </p>
+            </div>
+
+            <div className="bg-[#f8f9fa] border border-[#dadce0] p-3 rounded-lg mb-6">
+              <label className="block text-[11px] font-medium text-[#5f6368] mb-1 uppercase tracking-wider">
+                Shareable Student Quiz Link:
+              </label>
+              <div className="flex items-center space-x-2">
+                <input
+                  type="text"
+                  readOnly
+                  value={savedShareUrl}
+                  className="flex-1 bg-white border border-[#dadce0] px-3 py-2 rounded-md text-xs font-mono text-[#202124] focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(savedShareUrl);
+                    setCopiedLink(true);
+                    setTimeout(() => setCopiedLink(false), 2500);
+                  }}
+                  className="px-4 py-2 rounded-md text-xs font-medium text-white bg-[#1a73e8] hover:bg-[#1557b0] transition flex items-center space-x-1 shrink-0"
+                >
+                  {copiedLink ? (
+                    <>
+                      <Check className="w-4 h-4 text-white" />
+                      <span>Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4 text-white" />
+                      <span>Copy Link</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end space-x-2">
+              <button
+                type="button"
+                onClick={() => router.push(`/subjects/${selectedSubjectId}`)}
+                className="w-full py-2.5 rounded-md text-xs font-medium text-white bg-[#1a73e8] hover:bg-[#1557b0] transition"
+              >
+                Go to Subject Classwork Page
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </main>
